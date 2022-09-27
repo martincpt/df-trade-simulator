@@ -133,19 +133,65 @@ class DFTradeSimulator(ABC):
 
         Extends the data frame with `roi`, `wallet` and `wallet_fee` columns by
         passing each row to self.simulate_event()."""
+        # put HODL to last row so we will get a wallet balance
+        # calculation at the very end
+        self.df.iloc[-1, self.df.columns.get_loc(self.side_col)] = HODL
+
         self.df = self.df.apply(self.simulate_event, axis=1)
 
     @abstractmethod
     def should_trade(self) -> bool:
         """Determines whether a trade should be done."""
 
-    @abstractmethod
     def do_trade(self) -> DFTrade:
         """Handles trading procedure.
 
         Returns:
             DFTrade: Returns the processed trade.
         """
+
+        # calc roi and wallet values
+        roi = self.calc_roi()
+        wallet = self.calc_wallet(roi)
+        wallet_fee = self.calc_wallet(roi, fee=True)
+
+        # get args
+        args = {
+            "row": self.current_row,
+            "price": self.current_price,
+            "side": self.signal,
+            "roi": roi,
+            "wallet": wallet,
+            "wallet_fee": wallet_fee,
+        }
+
+        # create instance
+        trade = DFTrade(**args)
+
+        return trade
+
+    def calc_roi(self) -> float:
+        """Calculates ROI (Return of Investment) since last trade."""
+        # get prices and side
+        current_price = self.current_price
+        last_price = self.last_price
+        side = self.side
+        # print(f"{side = } {current_price = } {last_price = }")
+        # calc roi
+        return current_price / last_price if side == BUY else last_price / current_price
+
+    def calc_wallet(self, roi: float, fee: bool = False) -> float:
+        """Calculates wallet balance since the last trade.
+
+        Args:
+            roi (float): ROI of last trade.
+            fee (bool, optional): Whether to apply fee on it. Defaults to False.
+
+        Returns:
+            float: Wallet balance.
+        """
+        wallet = self.wallet * roi
+        return wallet if not fee else wallet * self.x_fee
 
     def extend_row_with_trade(self, row: Series, trade: DFTrade) -> None:
         """Extends row with trade datas.
@@ -250,43 +296,26 @@ class MarketDFTradeSimulator(DFTradeSimulator):
         # and if signal is not None
         return self.side != self.signal and self.signal is not None
 
-    def do_trade(self) -> DFTrade:
-        # get sides
-        signal = self.signal
-        side = self.side
 
+class StopLimitDFTradeSimulator(MarketDFTradeSimulator):
+    def __init__(self, df: DataFrame, treshold: float, **kwargs) -> None:
+        self.treshold = treshold
+        super().__init__(df, **kwargs)
+
+    def should_trade(self):
         # get prices
-        current_price = self.current_price
-        last_price = self.last_price
+        roi = self.calc_roi()
+        change = 1 - roi
 
-        # handle hodl
-        if signal == HODL:
-            signal = BUY if side == SELL else SELL
+        self.current_row["stop-limit"] = "[ ]"
 
-        # calc roi and wallet values
-        roi = current_price / last_price if side == BUY else last_price / current_price
-        wallet = self.wallet * roi
-        wallet_fee = self.wallet_fee * roi * self.x_fee
+        # cause a stop limit if above the treshold
+        if change > self.treshold and self.signal is None:
+            self.current_row[self.side_col] = SELL if self.side == BUY else BUY
+            self.current_row["stop-limit"] = "[x]"
+            return True
 
-        # get args
-        args = {
-            "row": self.current_row,
-            "price": self.current_price,
-            "roi": roi,
-            "wallet": wallet,
-            "wallet_fee": wallet_fee,
-            "side": self.signal,
-        }
-
-        # create instance
-        trade = DFTrade(**args)
-
-        return trade
-
-    def simulate(self):
-        # put HODL to last row so we will get a final calculation of our wallet
-        self.df.iloc[-1, self.df.columns.get_loc(self.side_col)] = HODL
-        super().simulate()
+        return super().should_trade()
 
 
 if __name__ == "__main__":
@@ -294,6 +323,6 @@ if __name__ == "__main__":
 
     df = pd.read_csv(TEST_CSV, index_col="time", parse_dates=["time"])
 
-    trade_sim = MarketDFTradeSimulator(df)
+    trade_sim = StopLimitDFTradeSimulator(df, treshold=0.1)
     trade_sim.simulate()
     print(trade_sim.df)
