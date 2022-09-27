@@ -1,9 +1,9 @@
-from dataclasses import dataclass
 import pandas as pd
 
 from pandas import DataFrame, Series
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Literal
 
 
@@ -16,10 +16,10 @@ HODL: str = "hodl"
 
 # Default columns
 PRICE_COL = "price"
+SIGNAL_COL = "signal"
+ROI_COL = "roi"
 WALLET_COL = "wallet"
 WALLET_FEE_COL = "wallet_fee"
-ROI_COL = "roi"
-SIDE_COL = "side"
 
 # Other config values
 INIT_WALLET = 1
@@ -37,12 +37,9 @@ class DFTrade:
 
 class DFTradeSimulator(ABC):
     df: DataFrame
-    # trades
     trades: list[DFTrade]
-    # row states
     current_row: Series
     last_row: Series
-    # helpers
     x_fee: float
     columns: tuple[str]
 
@@ -53,9 +50,14 @@ class DFTradeSimulator(ABC):
         self.wallet_col = kwargs.get("wallet_col", WALLET_COL)
         self.wallet_fee_col = kwargs.get("wallet_fee_col", WALLET_FEE_COL)
         self.roi_col = kwargs.get("roi_col", ROI_COL)
-        self.side_col = kwargs.get("side_col", SIDE_COL)
+        self.signal_col = kwargs.get("signal_col", SIGNAL_COL)
         # create list of columns
-        self.columns = self.side_col, self.roi_col, self.wallet_col, self.wallet_fee_col
+        self.columns = (
+            self.signal_col,
+            self.roi_col,
+            self.wallet_col,
+            self.wallet_fee_col,
+        )
         # set data frame
         self.set_df(df)
         # set fee
@@ -65,7 +67,6 @@ class DFTradeSimulator(ABC):
         """Sets the current data frame and cleans up existing trades."""
         # make a copy
         self.df = df.copy()
-        # make sure they exist without override
         # NOTE: defining columns here not only unifies the output data frame
         # (because none of these column values added if no trade produced)
         # but also keeps the original order of columns which is important
@@ -75,10 +76,10 @@ class DFTradeSimulator(ABC):
         # clean up
         self.trades = []
 
-    def add_sides(self, buy: Series, sell: Series) -> None:
-        """Adds sides by Series."""
-        self.df.loc[buy, self.side_col] = BUY
-        self.df.loc[sell, self.side_col] = SELL
+    def add_signals(self, buy: Series, sell: Series) -> None:
+        """Adds signal by boolean Series."""
+        self.df.loc[buy, self.signal_col] = BUY
+        self.df.loc[sell, self.signal_col] = SELL
 
     def simulate_event_pre(self, row: Series) -> None:
         """Runs at the beginning of each self.simulate_event().
@@ -135,13 +136,13 @@ class DFTradeSimulator(ABC):
         passing each row to self.simulate_event()."""
         # put HODL to last row so we will get a wallet balance
         # calculation at the very end
-        self.df.iloc[-1, self.df.columns.get_loc(self.side_col)] = HODL
+        self.df.iloc[-1, self.df.columns.get_loc(self.signal_col)] = HODL
 
         self.df = self.df.apply(self.simulate_event, axis=1)
 
     @abstractmethod
     def should_trade(self) -> bool:
-        """Determines whether a trade should be done."""
+        """Determines whether a trade should be excecuted."""
 
     def do_trade(self) -> DFTrade:
         """Handles trading procedure.
@@ -232,14 +233,14 @@ class DFTradeSimulator(ABC):
 
     @property
     def signal(self) -> Side | None:
-        """Returns the market side to change to (a.k.a. signal) from self.current_row.
+        """Returns the current signal from self.current_row.
 
         Please note this property is only up to date once self.simulate_event_pre()
         has updated self.current_row. Otherwise it may return None or an
         outdated result.
         """
         row = self.current_row
-        return None if row is None else self.nan_safe(row[self.side_col])
+        return None if row is None else self.nan_safe(row[self.signal_col])
 
     @property
     def current_price(self) -> float | None:
@@ -252,42 +253,6 @@ class DFTradeSimulator(ABC):
         or self.current_price if no trade found."""
         last_trade = self.last_trade
         return self.current_price if last_trade is None else last_trade.price
-
-    '''def simulate_event_1(self, row: Series) -> float:
-        """Simulates as an individual sample / data frame row comes in."""
-        # save current event
-        self.current_row = row
-        # read the new side to change to
-        side = self.new_side
-        # get the roi
-        roi = self.simulate_roi(row)
-        # TODO: how do I know that a real trade happened?
-        wallet = self.wallet * roi
-        wallet_fee = self.wallet_fee * roi * self.x_fee
-        # set roi, wallet and wallet fee on the row
-        row[self.roi_col] = roi
-        row[self.wallet_col] = wallet
-        row[self.wallet_fee_col] = wallet_fee
-        # store state of event
-        self.side = side if self.is_side(side) else self.side
-        self.wallet = wallet
-        self.wallet_fee = wallet_fee
-        self.last_row = row
-        return row
-
-    def is_side(self, side) -> bool:
-        """Returns True if the given argument is a type of Side."""
-        return side in Side.__args__
-
-    @property
-    def new_side(self) -> Side:
-        """Return the side from current row, which is the new side to change to."""
-        try:
-            side = self.current_row[self.side_col]
-        except KeyError:
-            side = None
-        return side if self.is_side(side) else None
-'''
 
 
 class MarketDFTradeSimulator(DFTradeSimulator):
@@ -307,11 +272,12 @@ class StopLimitDFTradeSimulator(MarketDFTradeSimulator):
         roi = self.calc_roi()
         change = 1 - roi
 
+        # add stop limit marker
         self.current_row["stop-limit"] = "[ ]"
 
         # cause a stop limit if above the treshold
         if change > self.treshold and self.signal is None:
-            self.current_row[self.side_col] = SELL if self.side == BUY else BUY
+            self.current_row[self.signal_col] = SELL if self.side == BUY else BUY
             self.current_row["stop-limit"] = "[x]"
             return True
 
