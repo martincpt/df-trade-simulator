@@ -103,17 +103,17 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
         trade_sim.do_trade = do_trade_mock
         # iter through
         for index, row in trade_sim.df.iterrows():
-            updated = trade_sim.simulate_event(row)
+            trade_sim.simulate_event(row)
             if trade_sim.should_trade():
                 trade = trade_sim.last_trade
                 wallet = np.prod([x.roi for x in trade_sim.trades])
                 wallet_fee = wallet * trade_sim.x_fee ** len(trade_sim.trades)
-                print(f"{trade.roi = } {roi = }")
-                print(f"{trade.wallet = } {wallet = }")
-                print(f"{trade.wallet_fee = } {wallet_fee = }")
+
                 self.assertAlmostEqual(trade.roi, roi)
                 self.assertAlmostEqual(trade.wallet, wallet)
                 self.assertAlmostEqual(trade.wallet_fee, wallet_fee)
+            # update roi
+            roi += 1
 
     """def test_is_side(self) -> None:
         trade_sim = self.trade_simulator
