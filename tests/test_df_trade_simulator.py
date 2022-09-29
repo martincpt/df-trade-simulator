@@ -18,6 +18,7 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
     trade_simulator: DFTradeSimulator
     buy_signals: Series
     sell_signals: Series
+    row: Series
 
     @patch.multiple(DFTradeSimulator, __abstractmethods__=set())
     def setUp(self) -> None:
@@ -27,6 +28,23 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
         self.sell_signals = self.df["pred"] == 0
         self.buy_signals_len = len(self.buy_signals[self.buy_signals == True])
         self.sell_signals_len = len(self.sell_signals[self.sell_signals == True])
+        self.row = self.df.iloc[0]
+        # test trade
+        self.test_trade_price = 314.59
+        self.test_trade_row = self.row.copy()
+        self.test_trade_price["price"] = self.test_trade_price
+        self.test_trade_side = "sell"
+        self.test_trade_roi = 1.2
+        self.test_trade_wallet = self.test_trade_roi
+        self.test_trade_wallet_fee = self.test_trade_wallet * self.trade_simulator.x_fee
+        self.test_trade = DFTrade(
+            row=self.row,
+            price=self.test_trade_price,
+            side=self.test_trade_side,
+            roi=1.2,
+            wallet=self.test_trade_wallet,
+            wallet_fee=self.test_trade_wallet_fee,
+        )
 
     def test_set_df(self) -> None:
         trade_sim = self.trade_simulator
@@ -46,18 +64,63 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
         self.assertEqual(sells, self.sell_signals_len)
 
     def test_simulate_event_pre(self) -> None:
-        row = self.df.iloc[0]
+        row = self.row.copy()
         trade_sim = self.trade_simulator
         trade_sim.simulate_event_pre(row)
 
         self.assertTrue(trade_sim.current_row.equals(row))
 
     def test_simulate_event_post(self) -> None:
-        row = self.df.iloc[0]
+        row = self.row.copy()
         trade_sim = self.trade_simulator
         trade_sim.simulate_event_post(row)
 
         self.assertTrue(trade_sim.last_row.equals(row))
+
+    def test_current_and_last_trade_price(self) -> None:
+        row = self.row.copy()
+        trade_sim = self.trade_simulator
+        trade_sim.should_trade = lambda: False
+
+        # scenario 1: they both have initial value, which is None
+        current_price_is_none = trade_sim.current_price
+        self.assertTrue(trade_sim.current_row is None)
+        self.assertTrue(current_price_is_none is None)
+
+        last_price_is_none = trade_sim.last_trade_price
+        self.assertTrue(trade_sim.last_row is None)
+        self.assertTrue(last_price_is_none is None)
+
+        # scenario 2: simulate_event_pre has been called
+        # and current_row has been assigned,
+        # so current_price will have the same value as in the row
+        trade_sim.simulate_event(row)
+
+        current_price_is_same = trade_sim.current_price
+        self.assertTrue(trade_sim.current_row is not None)
+        self.assertAlmostEqual(current_price_is_same, row["price"])
+
+        # if trade not happened but current_row is available
+        # last_trade_price should return current_price as a fallback
+        last_price_is_same_as_current = trade_sim.last_trade_price
+        self.assertTrue(trade_sim.last_trade is None)
+        self.assertAlmostEqual(last_price_is_same_as_current, current_price_is_same)
+
+        # scenario 3: a trade is available
+        trade_sim.trades.append(self.test_trade)
+
+        self.assertTrue(trade_sim.last_trade is not None)
+        self.assertAlmostEqual(self.test_trade_price, trade_sim.last_trade_price)
+
+    def test_calc_roi(self) -> None:
+        return
+        trade_sim = self.trade_simulator
+        row = self.row.copy()
+        print(">>>>>>>>>>>>")
+        print(trade_sim.last_price)
+        print(trade_sim.current_price)
+        print(trade_sim.last_price)
+        print(row)
 
     def test_nan_safe(self) -> None:
         value = "safe"
@@ -70,7 +133,7 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
         self.assertEqual(none, None)
 
     def test_extend_row_with_trade(self) -> None:
-        row = self.df.iloc[0]
+        row = self.row.copy()
         trade = DFTrade(row, price=1, side=BUY, roi=1, wallet=2, wallet_fee=1.990)
         trade_sim = self.trade_simulator
 
@@ -79,6 +142,9 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
         self.assertAlmostEqual(row[trade_sim.roi_col], 1)
         self.assertAlmostEqual(row[trade_sim.wallet_col], 2)
         self.assertAlmostEqual(row[trade_sim.wallet_fee_col], 1.990)
+
+    def test_do_trade(self) -> None:
+        pass
 
     @patch.multiple(DFTradeSimulator, __abstractmethods__=set())
     def test_simulate_event(self) -> None:
