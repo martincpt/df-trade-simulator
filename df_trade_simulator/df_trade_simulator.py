@@ -38,8 +38,8 @@ class DFTrade:
 class DFTradeSimulator(ABC):
     df: DataFrame
     trades: list[DFTrade]
-    current_row: Series
-    last_row: Series
+    current_row: Series = None
+    last_row: Series = None
     x_fee: float
     columns: tuple[str]
 
@@ -175,7 +175,7 @@ class DFTradeSimulator(ABC):
         """Calculates ROI (Return of Investment) since last trade."""
         # get prices and side
         current_price = self.current_price
-        last_price = self.last_price
+        last_price = self.last_trade_price
         side = self.side
         # print(f"{side = } {current_price = } {last_price = }")
         # calc roi
@@ -208,6 +208,18 @@ class DFTradeSimulator(ABC):
     def nan_safe(self, value: Any) -> Any:
         """Replaces NaN with None."""
         return None if pd.isna(value) else value
+
+    @property
+    def current_price(self) -> float | None:
+        """Returns the price from the current row."""
+        return getattr(self.current_row, self.price_col, None)
+
+    @property
+    def last_trade_price(self) -> float | None:
+        """Returns the price from the last trade if available
+        or self.current_price if no trade found."""
+        last_trade = self.last_trade
+        return self.current_price if last_trade is None else last_trade.price
 
     @property
     def last_trade(self) -> DFTrade | None:
@@ -243,16 +255,13 @@ class DFTradeSimulator(ABC):
         return None if row is None else self.nan_safe(row[self.signal_col])
 
     @property
-    def current_price(self) -> float | None:
-        """Returns the price from the current row."""
-        return getattr(self.current_row, self.price_col, None)
-
-    @property
-    def last_price(self) -> float | None:
-        """Returns the price from the last trade if available
-        or self.current_price if no trade found."""
-        last_trade = self.last_trade
-        return self.current_price if last_trade is None else last_trade.price
+    def df_trades(self) -> DataFrame:
+        df = self.df
+        trades = df[df[self.signal_col].notna()]  # get rid of nans
+        trades = trades.loc[
+            trades[self.signal_col] != trades[self.signal_col].shift()
+        ].copy()  # rm consecutive duplicates
+        return trades
 
 
 class MarketDFTradeSimulator(DFTradeSimulator):
