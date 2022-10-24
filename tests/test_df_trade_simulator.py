@@ -13,6 +13,7 @@ from df_trade_simulator import (
     DFTradeSimulator,
     MarketDFTradeSimulator,
     StopLimitDFTradeSimulator,
+    StopLimitDFTradeConfig,
 )
 from df_trade_simulator import Side
 from df_trade_simulator import BUY, SELL, HODL
@@ -321,11 +322,32 @@ class DFTradeSimulator_TestCase(unittest.TestCase):
 
 
 class MarketDFTradeSimulator_TestCase(unittest.TestCase):
-    def test(self):
-        csv = prepare_test_env.TEST_RESULTS_CSV
-        df = prepare_test_env.READ_TEST_CSV(csv)
-        trade_sim = MarketDFTradeSimulator(df)
-        # trade_sim.df_trades
+    def setUp(self) -> None:
+        self.csv = prepare_test_env.TEST_SMALL_RESULTS_CSV
+        self.df = prepare_test_env.READ_TEST_CSV(self.csv)
+
+    def test_market_df_trade_simulator(self) -> None:
+        # NOTE: just for coverage right now
+        # TODO: make more proper tests
+        trade_sim = MarketDFTradeSimulator(self.df, None)
+        trade_sim.simulate()
+
+
+class StopLimitDFTradeSimulator_TestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.csv = prepare_test_env.TEST_SMALL_RESULTS_CSV
+        self.df = prepare_test_env.READ_TEST_CSV(self.csv)
+
+    def test_validate(self) -> None:
+        with self.assertRaises(ValueError):
+            ts = StopLimitDFTradeSimulator(self.df, None)
+
+    def test_stop_limit_df_trade_simulator(self) -> None:
+        # NOTE: just for coverage right now
+        # TODO: make more proper tests
+        config = StopLimitDFTradeConfig(treshold=0.1)
+        trade_sim = StopLimitDFTradeSimulator(self.df, config)
+        trade_sim.simulate()
 
 
 if __name__ == "__main__":
