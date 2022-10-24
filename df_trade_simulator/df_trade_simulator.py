@@ -35,6 +35,11 @@ class DFTrade:
     wallet_fee: float = INIT_WALLET
 
 
+@dataclass
+class DFTradeConfig(ABC):
+    ...
+
+
 class DFTradeSimulator(ABC):
     df: DataFrame
     trades: list[DFTrade]
@@ -77,7 +82,7 @@ class DFTradeSimulator(ABC):
         self.trades = []
 
     def add_signals(self, buy: Series, sell: Series) -> None:
-        """Adds signal by boolean Series."""
+        """Adds signal by a Series selection (boolean Series)."""
         self.df.loc[buy, self.signal_col] = BUY
         self.df.loc[sell, self.signal_col] = SELL
 
@@ -119,9 +124,13 @@ class DFTradeSimulator(ABC):
         # pre process
         self.simulate_event_pre(row)
 
+        # check if a trade should be excecuted
         if self.should_trade():
+            # do the trade
             trade = self.do_trade()
-            self.trades.append(trade)
+            # append the trade to the list
+            self.add_trade(trade)
+            # extend the current row with trade data
             self.extend_row_with_trade(row, trade)
 
         # post process
@@ -132,12 +141,11 @@ class DFTradeSimulator(ABC):
     def simulate(self) -> None:
         """Simulates the state of the wallet by going through the data frame.
 
-        Extends the data frame with `roi`, `wallet` and `wallet_fee` columns by
-        passing each row to self.simulate_event()."""
-        # put HODL to last row so we will get a wallet balance
-        # calculation at the very end
+        Fills the data frame with `roi`, `wallet` and `wallet_fee` values
+        whenever a trade simulation excecuted."""
+        # put HODL to last row so we will get a wallet balance at the very end
         self.df.iloc[-1, self.df.columns.get_loc(self.signal_col)] = HODL
-
+        # passing each row to self.simulate_event().
         self.df = self.df.apply(self.simulate_event, axis=1)
 
     @abstractmethod
@@ -171,13 +179,19 @@ class DFTradeSimulator(ABC):
 
         return trade
 
+    def add_trade(self, trade: DFTrade) -> None:
+        """Adds a trade to trades list."""
+        self.trades.append(trade)
+
     def calc_roi(self) -> float:
         """Calculates ROI (Return of Investment) since last trade."""
         # get prices and side
         current_price = self.current_price
         last_price = self.last_trade_price
         side = self.side
-        # print(f"{side = } {current_price = } {last_price = }")
+        # just return 1 if no price data available
+        if current_price is None:
+            return 1
         # calc roi
         return current_price / last_price if side == BUY else last_price / current_price
 
