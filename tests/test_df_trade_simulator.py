@@ -13,7 +13,6 @@ from df_trade_simulator import (
     DFTradeSimulator,
     MarketDFTradeSimulator,
     StopLimitDFTradeSimulator,
-    StopLimitDFTradeConfig,
 )
 from df_trade_simulator import Side
 from df_trade_simulator import BUY, SELL, HODL
@@ -329,8 +328,10 @@ class MarketDFTradeSimulator_TestCase(unittest.TestCase):
     def test_market_df_trade_simulator(self) -> None:
         # NOTE: just for coverage right now
         # TODO: make more proper tests
-        trade_sim = MarketDFTradeSimulator(self.df, None)
+        trade_sim = MarketDFTradeSimulator(self.df)
         trade_sim.simulate()
+
+        self.assertAlmostEqual(trade_sim.wallet, 0.666667, 6)
 
 
 class StopLimitDFTradeSimulator_TestCase(unittest.TestCase):
@@ -338,16 +339,11 @@ class StopLimitDFTradeSimulator_TestCase(unittest.TestCase):
         self.csv = prepare_test_env.TEST_SMALL_RESULTS_CSV
         self.df = prepare_test_env.READ_TEST_CSV(self.csv)
 
-    def test_validate(self) -> None:
-        with self.assertRaises(ValueError):
-            ts = StopLimitDFTradeSimulator(self.df, None)
-
     def test_stop_limit_df_trade_simulator(self) -> None:
-        # NOTE: just for coverage right now
-        # TODO: make more proper tests
-        config = StopLimitDFTradeConfig(treshold=0.1)
-        trade_sim = StopLimitDFTradeSimulator(self.df, config)
+        trade_sim = StopLimitDFTradeSimulator(self.df, treshold=0.1)
         trade_sim.simulate()
+
+        self.assertAlmostEqual(trade_sim.wallet, 1.851852, 6)
 
 
 if __name__ == "__main__":

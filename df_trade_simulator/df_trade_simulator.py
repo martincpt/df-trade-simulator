@@ -35,25 +35,15 @@ class DFTrade:
     wallet_fee: float = INIT_WALLET
 
 
-@dataclass
-class DFTradeConfig(ABC):
-    """Basic representation of a DFTradeSimulator configuration object."""
-
-    ...
-
-
 class DFTradeSimulator(ABC):
     df: DataFrame
-    config: DFTradeConfig
     trades: list[DFTrade]
     current_row: Series = None
     last_row: Series = None
     x_fee: float
     columns: tuple[str]
 
-    def __init__(self, df: DataFrame, config: DFTradeConfig = None, **kwargs) -> None:
-        # store config
-        self.config = config
+    def __init__(self, df: DataFrame, **kwargs) -> None:
         # read kwargs
         self.fee = kwargs.get("fee", 0.1)
         self.price_col = kwargs.get("price_col", PRICE_COL)
@@ -72,8 +62,6 @@ class DFTradeSimulator(ABC):
         self.set_df(df)
         # set fee
         self.x_fee = (100 - self.fee) / 100
-        # validate
-        self.validate()
 
     def set_df(self, df: DataFrame):
         """Sets the current data frame and cleans up existing trades."""
@@ -87,9 +75,6 @@ class DFTradeSimulator(ABC):
                 self.df[col] = float("NaN")
         # clean up
         self.trades = []
-
-    def validate(self) -> None:
-        """Validates the trade simulator object."""
 
     def add_signals(self, buy: Series, sell: Series) -> None:
         """Adds signal by a Series selection (boolean Series)."""
@@ -297,21 +282,14 @@ class MarketDFTradeSimulator(DFTradeSimulator):
         return self.side != self.signal and self.signal is not None
 
 
-@dataclass
-class StopLimitDFTradeConfig(DFTradeConfig):
-    """StopLimitDFTradeSimulator configuration object."""
-
-    treshold: float
-
-
 class StopLimitDFTradeSimulator(MarketDFTradeSimulator):
     """Stop-limit trade simulator which activates a stop loss trade if a given treshold reached."""
 
-    def validate(self):
-        if not isinstance(self.config, StopLimitDFTradeConfig):
-            raise ValueError(
-                "StopLimitDFTradeSimulator configuration object is required."
-            )
+    treshold: float
+
+    def __init__(self, df: DataFrame, treshold: float, **kwargs):
+        self.treshold = treshold
+        super().__init__(df, **kwargs)
 
     def should_trade(self):
         # get prices
@@ -322,7 +300,7 @@ class StopLimitDFTradeSimulator(MarketDFTradeSimulator):
         self.current_row["stop-limit"] = "[ ]"
 
         # cause a stop limit if above the treshold
-        if change > self.config.treshold and self.signal is None:
+        if change > self.treshold and self.signal is None:
             self.current_row[self.signal_col] = SELL if self.side == BUY else BUY
             self.current_row["stop-limit"] = "[x]"
             return True
@@ -335,6 +313,6 @@ if __name__ == "__main__":
 
     df = pd.read_csv(TEST_CSV, index_col="time", parse_dates=["time"])
 
-    trade_sim = StopLimitDFTradeSimulator(df, StopLimitDFTradeConfig(treshold=0.1))
+    trade_sim = StopLimitDFTradeSimulator(df, treshold=0.1)
     trade_sim.simulate()
     print(trade_sim.df)
