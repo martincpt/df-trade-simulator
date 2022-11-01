@@ -1,6 +1,8 @@
 # Data Frame Trade Simulator
 Simulates trading strategies through out a Pandas data frame.
 
+![Requirement: Python >= 3.10](https://img.shields.io/badge/Python-%3E%3D%203.10-blue)
+
 ## Quickstart
 
 ```python
